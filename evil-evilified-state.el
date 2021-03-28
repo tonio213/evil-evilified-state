@@ -1,6 +1,6 @@
 ;;; evil-evilified-state.el --- A minimalistic evil state
 ;;
-;; Copyright (c) 2012-2016 Sylvain Benner & Contributors
+;; Copyright (c) 2012-2020 Sylvain Benner & Contributors
 ;;
 ;; Author: Sylvain Benner <sylvain.benner@gmail.com>
 ;; Keywords: convenience editing evil spacemacs
@@ -30,14 +30,14 @@
 
 ;; The shadowed original mode key bindings are automatically reassigned
 ;; following a set of rules:
-;; Keys such as 
-;; /,:,h,j,k,l,n,N,v,V,gg,G,C-f,C-b,C-d,C-e,C-u,C-y and C-z 
+;; Keys such as
+;; /,:,h,j,k,l,n,N,v,V,gg,G,C-f,C-b,C-d,C-e,C-u,C-y and C-z
 ;; are working as in Evil.
 ;; Other keys will be moved according to this pattern:
 ;; a -> A -> C-a -> C-A
-;; The first unreserved key will be used. 
+;; The first unreserved key will be used.
 ;; There is an exception for g, which will be directly
-;; bound to C-G, since G and C-g (latest being an important escape key in Emacs) 
+;; bound to C-G, since G and C-g (latest being an important escape key in Emacs)
 ;; are already being used.
 
 ;;; Code:
@@ -53,19 +53,18 @@
   "Local backup of normal state keymap.")
 (make-variable-buffer-local 'evilified-state--normal-state-map)
 
+(defvar evilified-state--visual-state-map nil
+  "Local backup of visual state keymap.")
+(make-variable-buffer-local 'evilified-state--visual-state-map)
+
 (evil-define-state evilified
   "Evilified state.
- Hybrid `emacs state' with carrefully selected Vim key bindings.
+ Hybrid `emacs state' with carefully selected Vim key bindings.
  See spacemacs conventions for more info."
   :tag " <N'> "
   :enable (emacs)
   :message "-- EVILIFIED BUFFER --"
   :cursor box)
-
-(bind-map spacemacs-default-map
-  :prefix-cmd spacemacs-cmds
-  :evil-states (evilified)
-  :override-minor-modes t)
 
 (evil-define-command evil-force-evilified-state ()
   "Switch to evilified state without recording current command."
@@ -78,7 +77,10 @@
 Needed to bypass keymaps set as text properties."
   (unless (bound-and-true-p isearch-mode)
     (when (memq evil-state '(evilified visual))
-      (let* ((map (get-char-property (point) 'keymap))
+      (let* ((map-or-symbol (get-char-property (point) 'keymap))
+             (map (if (and (symbolp map-or-symbol) (boundp map-or-symbol))
+                      (symbol-value map-or-symbol)
+                    map-or-symbol))
              (evilified-map (when map (cdr (assq 'evilified-state map))))
              (command (when (and evilified-map
                                  (eq 1 (length (this-command-keys))))
@@ -96,7 +98,9 @@ Needed to bypass keymaps set as text properties."
 
 (defun evilified-state--restore-normal-state-keymap ()
   "Restore the normal state keymap."
-  (setq-local evil-normal-state-map evilified-state--normal-state-map))
+  (setq-local evil-normal-state-map evilified-state--normal-state-map)
+  (define-key evil-normal-state-map [escape] 'evil-force-normal-state)
+  (evil-normal-state))
 
 (defun evilified-state--clear-normal-state-keymap ()
   "Clear the normal state keymap."
@@ -104,10 +108,17 @@ Needed to bypass keymaps set as text properties."
   (evil-normalize-keymaps))
 
 (defun evilified-state--setup-visual-state-keymap ()
-  "Setup the normal state keymap."
+  "Setup the visual state keymap."
+  (unless evilified-state--visual-state-map
+    (setq-local evilified-state--visual-state-map
+                (copy-keymap evil-visual-state-map)))
   (setq-local evil-visual-state-map
               (cons 'keymap (list (cons ?y 'evil-yank)
                                   (cons 'escape 'evil-exit-visual-state)))))
+
+(defun evilified-state--restore-visual-state-keymap ()
+  "Restore the visual state keymap."
+  (setq-local evil-visual-state-map evilified-state--visual-state-map))
 
 (defun evilified-state--evilified-state-on-entry ()
   "Setup evilified state."
@@ -127,6 +138,18 @@ Needed to bypass keymaps set as text properties."
   (add-hook 'evil-visual-state-exit-hook
             'evilified-state--visual-state-on-exit nil 'local))
 
+(defun evilified-state--evilified-state-on-exit ()
+  "Restore evil normal and visual states."
+  (evilified-state--restore-normal-state-keymap)
+  (evilified-state--restore-visual-state-keymap)
+  (remove-hook 'pre-command-hook 'evilified-state--pre-command-hook 'local)
+  (remove-hook 'evil-visual-state-entry-hook
+               'evilified-state--visual-state-on-entry 'local)
+  (remove-hook 'evil-visual-state-exit-hook
+               'evilified-state--visual-state-on-exit 'local))
+
+(defalias 'evil-evilified-state-exit 'evilified-state--evilified-state-on-exit)
+
 (defun evilified-state--visual-state-on-entry ()
   "Setup visual state."
   ;; we need to clear temporarily the normal state keymap in order to reach
@@ -136,7 +159,7 @@ Needed to bypass keymaps set as text properties."
 
 (defun evilified-state--visual-state-on-exit ()
   "Clean visual state"
-  (evilified-state--restore-normal-state-keymap))
+  (evilified-state--restore-visual-state-keymap))
 
 (add-hook 'evil-evilified-state-entry-hook
           'evilified-state--evilified-state-on-entry)
@@ -161,6 +184,7 @@ Needed to bypass keymaps set as text properties."
 (define-key evil-evilified-state-map (kbd "C-d") 'evil-scroll-down)
 (define-key evil-evilified-state-map (kbd "C-u") 'evil-scroll-up)
 (define-key evil-evilified-state-map (kbd "C-z") 'evil-emacs-state)
+(define-key evil-evilified-state-map (kbd "C-w") 'evil-window-map)
 (setq evil-evilified-state-map-original (copy-keymap evil-evilified-state-map))
 
 ;; old macro
@@ -183,7 +207,7 @@ BODY is a list of additional key bindings to apply for the given MAP in
 (defmacro evilified-state-evilify-map (map &rest props)
   "Evilify MAP.
 
-Avaiblabe PROPS:
+Available PROPS:
 
 `:mode SYMBOL'
 A mode SYMBOL associated with MAP. Used to add SYMBOL to the list of modes
@@ -273,8 +297,8 @@ Each pair KEYn FUNCTIONn is defined in MAP after the evilification of it."
                          (evilified-state--find-new-event event) nil
                          processed pending-funcs)))
     (when pending-funcs
-      (spacemacs-buffer/warning
-       (concat (format (concat "Auto-evilication could not remap these "
+      (message
+       (concat (format (concat "Auto-evilification could not remap these "
                                "functions in map `%s':\n")
                        map-symbol)
                (mapconcat (lambda (x)
@@ -334,4 +358,4 @@ Currently this function infloops when the list is circular."
 
 (provide 'evil-evilified-state)
 
-;;; evil-evilified-state.el ends here
+;;; core-evilified-state.el ends here
